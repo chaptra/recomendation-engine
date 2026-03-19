@@ -144,8 +144,13 @@ docker run -p 8000:8000 \
 
 ## ☁️ Cloudflare Workers Deployment (Recommended)
 
-The engine can be deployed to **Cloudflare Workers** for near-zero cost and global edge performance.  
-The heavy TF-IDF computation is performed **offline once**, and pre-computed similarity scores are stored in **Cloudflare D1** (SQLite). The Worker simply queries those results — no scikit-learn, no PostgreSQL connections at runtime.
+The engine can be deployed to **Cloudflare Workers** for near-zero cost and global edge performance.
+
+**How it works:**
+1. You **train the model locally** (Python + TF-IDF) on your book data
+2. The script writes pre-computed similarity scores to SQL files
+3. You import those files into **Cloudflare D1** (SQLite at the edge)
+4. The **Worker** serves title-based recommendations by querying D1 — no scikit-learn, no PostgreSQL, no always-on server
 
 ### Cost comparison
 
@@ -157,11 +162,45 @@ The heavy TF-IDF computation is performed **offline once**, and pre-computed sim
 
 ### Prerequisites
 
+- Python 3.9+ with `pip install -r requirements.txt`
 - [Node.js 18+](https://nodejs.org/)
 - A [Cloudflare account](https://dash.cloudflare.com/sign-up) (free tier is sufficient)
 - `npx wrangler login` — authenticate the Cloudflare CLI
 
-### Step 1 — Create D1 database and KV namespace
+### Step 1 — Train locally and export similarity data
+
+**Option A — from a local CSV file (no database required)**
+
+Your CSV must have these columns: `id`, `title`, `authors`, `categories`, `description`.  
+Optional columns: `slug`, `rating`, `rating_count`, `cover_path`, `year`, `isbn`.  
+Column names are flexible — common aliases like `author`, `genre`, `average_rating`, `summary` are recognised automatically.
+
+```bash
+# Try it immediately with the included sample (20 classic books)
+python scripts/export_to_d1.py --csv data/sample_books.csv
+
+# Or use your own catalogue
+python scripts/export_to_d1.py --csv /path/to/your/books.csv
+```
+
+**Option B — from a JSON file**
+
+```bash
+python scripts/export_to_d1.py --json /path/to/books.json
+```
+
+**Option C — from your existing PostgreSQL database**
+
+```bash
+# Set RDS_DB_URL in .env first (see .env.example)
+python scripts/export_to_d1.py
+```
+
+All three options produce two files:
+- `d1_books.sql` — book records
+- `d1_similarities.sql` — pre-computed similarity scores (adjust with `--top-n` and `--threshold`)
+
+### Step 2 — Create D1 database and KV namespace
 
 ```bash
 # Create the D1 database
@@ -184,24 +223,13 @@ binding = "CACHE"
 id = "<paste-kv-id-here>"
 ```
 
-### Step 2 — Apply the database schema
+### Step 3 — Apply schema and import data
 
 ```bash
+# Apply schema (one-time)
 npx wrangler d1 execute recommendation-engine --file=schema.sql
-```
 
-### Step 3 — Export data from PostgreSQL → D1
-
-Run the one-time migration script on any machine that can reach your PostgreSQL database:
-
-```bash
-# Install Python dependencies (reuse existing venv)
-pip install -r requirements.txt
-
-# Export (adjust --top-n for how many similar books to store per book)
-python scripts/export_to_d1.py --top-n 50 --threshold 0.1
-
-# Import books (~seconds for small catalogues, minutes for 60 K+)
+# Import books
 npx wrangler d1 execute recommendation-engine --file=d1_books.sql
 
 # Import pre-computed similarities
@@ -224,14 +252,24 @@ Your API is now live at `https://recommendation-engine.<your-subdomain>.workers.
 |----------|--------|-------------|
 | `/` | GET | API info |
 | `/health` | GET | Health check |
-| `/suggest?title=X&limit=N` | GET | Get recommendations (simple) |
-| `/recommendations` | POST | Get recommendations (full, body: `{title, limit, similarity_threshold}`) |
+| `/suggest?title=X&limit=N` | GET | Get recommendations by title |
+| `/recommendations` | POST | Get recommendations (body: `{title, limit, similarity_threshold}`) |
 | `/search?q=X&count=N` | GET | Full-text search |
 | `/search/<title>` | GET | Exact-title lookup |
 
 ### Re-syncing data
 
-Re-run `scripts/export_to_d1.py` whenever your book catalogue changes, then re-import the generated SQL files.  
+Whenever your book catalogue changes, re-train and re-import:
+
+```bash
+# Re-run training (picks up file changes automatically)
+python scripts/export_to_d1.py --csv /path/to/books.csv
+
+# Re-import into D1
+npx wrangler d1 execute recommendation-engine --file=d1_books.sql
+npx wrangler d1 execute recommendation-engine --file=d1_similarities.sql
+```
+
 KV cache entries expire automatically after 24 hours (configurable via `CACHE_TTL_SECONDS` in `wrangler.toml`).
 
 ### Local development

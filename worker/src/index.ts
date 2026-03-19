@@ -285,7 +285,7 @@ export default {
 
       // Docs redirect (optional convenience)
       if (path === '/docs') {
-        return Response.redirect('https://developers.cloudflare.com/', 302);
+        return Response.redirect('https://developers.cloudflare.com/', 301);
       }
 
       return err('Not Found', 404);

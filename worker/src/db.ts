@@ -27,8 +27,8 @@ export async function findBookByTitle(
     .first<BookRow>();
   if (exact) return exact;
 
-  // Prefix / contains match
-  const pattern = `%${title.replace(/[%_]/g, '\\$&')}%`;
+  // Prefix / contains match — escape backslash first, then LIKE wildcards
+  const pattern = `%${title.replace(/\\/g, '\\\\').replace(/[%_]/g, '\\$&')}%`;
   return db
     .prepare(
       "SELECT * FROM books WHERE title LIKE ? ESCAPE '\\' LIMIT 1",

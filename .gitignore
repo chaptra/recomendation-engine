@@ -88,6 +88,13 @@ reku.pem
 *.tmp
 *.temp
 
+# Cloudflare Worker build artifacts and dependencies
+worker/node_modules/
+worker/dist/
+.wrangler/
+d1_books.sql
+d1_similarities.sql
+
 # Documentation builds
 docs/_build/
 site/

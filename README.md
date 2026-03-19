@@ -142,6 +142,104 @@ docker run -p 8000:8000 \
   book-recommender
 ```
 
+## ☁️ Cloudflare Workers Deployment (Recommended)
+
+The engine can be deployed to **Cloudflare Workers** for near-zero cost and global edge performance.  
+The heavy TF-IDF computation is performed **offline once**, and pre-computed similarity scores are stored in **Cloudflare D1** (SQLite). The Worker simply queries those results — no scikit-learn, no PostgreSQL connections at runtime.
+
+### Cost comparison
+
+| | EC2 t3.medium | Cloudflare Workers |
+|---|---|---|
+| Always-on compute | ~$30/month | **$0** (free tier: 100K req/day) |
+| Database | RDS ~$15/month | **D1 free tier** (5 GB, 5M rows read/day) |
+| Cache | ElastiCache ~$15/month | **KV free tier** (100K reads/day) |
+
+### Prerequisites
+
+- [Node.js 18+](https://nodejs.org/)
+- A [Cloudflare account](https://dash.cloudflare.com/sign-up) (free tier is sufficient)
+- `npx wrangler login` — authenticate the Cloudflare CLI
+
+### Step 1 — Create D1 database and KV namespace
+
+```bash
+# Create the D1 database
+npx wrangler d1 create recommendation-engine
+
+# Create the KV namespace for caching
+npx wrangler kv namespace create recommendation-cache
+```
+
+Copy the IDs printed by each command into `wrangler.toml`:
+
+```toml
+[[d1_databases]]
+binding = "DB"
+database_name = "recommendation-engine"
+database_id  = "<paste-d1-id-here>"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "<paste-kv-id-here>"
+```
+
+### Step 2 — Apply the database schema
+
+```bash
+npx wrangler d1 execute recommendation-engine --file=schema.sql
+```
+
+### Step 3 — Export data from PostgreSQL → D1
+
+Run the one-time migration script on any machine that can reach your PostgreSQL database:
+
+```bash
+# Install Python dependencies (reuse existing venv)
+pip install -r requirements.txt
+
+# Export (adjust --top-n for how many similar books to store per book)
+python scripts/export_to_d1.py --top-n 50 --threshold 0.1
+
+# Import books (~seconds for small catalogues, minutes for 60 K+)
+npx wrangler d1 execute recommendation-engine --file=d1_books.sql
+
+# Import pre-computed similarities
+npx wrangler d1 execute recommendation-engine --file=d1_similarities.sql
+```
+
+### Step 4 — Deploy the Worker
+
+```bash
+cd worker && npm install
+cd ..
+npx wrangler deploy
+```
+
+Your API is now live at `https://recommendation-engine.<your-subdomain>.workers.dev`.
+
+### Worker API endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | API info |
+| `/health` | GET | Health check |
+| `/suggest?title=X&limit=N` | GET | Get recommendations (simple) |
+| `/recommendations` | POST | Get recommendations (full, body: `{title, limit, similarity_threshold}`) |
+| `/search?q=X&count=N` | GET | Full-text search |
+| `/search/<title>` | GET | Exact-title lookup |
+
+### Re-syncing data
+
+Re-run `scripts/export_to_d1.py` whenever your book catalogue changes, then re-import the generated SQL files.  
+KV cache entries expire automatically after 24 hours (configurable via `CACHE_TTL_SECONDS` in `wrangler.toml`).
+
+### Local development
+
+```bash
+npx wrangler dev   # starts a local Worker + D1 + KV emulator
+```
+
 ## ⚙️ Configuration
 
 Configure the application using environment variables:

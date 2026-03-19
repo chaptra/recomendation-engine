@@ -1,0 +1,37 @@
+name = "recommendation-engine"
+main = "worker/src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# ⚠️  BEFORE DEPLOYING: replace the two placeholder IDs below.
+#
+#   1. Create the D1 database:
+#        npx wrangler d1 create recommendation-engine
+#      Then paste the "database_id" printed by the command into [[d1_databases]] below.
+#
+#   2. Create the KV namespace:
+#        npx wrangler kv namespace create recommendation-cache
+#      Then paste the "id" printed by the command into [[kv_namespaces]] below.
+#
+#   Deploying with the placeholder strings will cause a Wrangler error.
+
+[vars]
+ENVIRONMENT = "production"
+CACHE_TTL_SECONDS = "86400"
+MAX_RECOMMENDATIONS = "50"
+DEFAULT_RECOMMENDATIONS = "10"
+SIMILARITY_THRESHOLD = "0.1"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "recommendation-engine"
+# ⚠️  Replace with the ID returned by: npx wrangler d1 create recommendation-engine
+database_id = "your-d1-database-id-here"
+
+[[kv_namespaces]]
+binding = "CACHE"
+# ⚠️  Replace with the ID returned by: npx wrangler kv namespace create recommendation-cache
+id = "your-kv-namespace-id-here"
+
+[build]
+command = "cd worker && npm install && npm run build"

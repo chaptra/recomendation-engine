@@ -1,0 +1,22 @@
+{
+  "name": "recommendation-engine-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker for the book recommendation engine",
+  "scripts": {
+    "build": "tsc",
+    "dev": "cd .. && npx wrangler dev",
+    "deploy": "cd .. && npx wrangler deploy",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.5.7",
+    "@cloudflare/workers-types": "^4.20240925.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.1",
+    "wrangler": "^3.114.17"
+  },
+  "overrides": {
+    "wrangler": "^3.114.17"
+  }
+}
